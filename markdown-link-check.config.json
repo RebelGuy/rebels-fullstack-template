@@ -1,7 +1,8 @@
 {
   "ignorePatterns": [
     { "pattern": "http://localhost" },
-    { "pattern": "http://127.0.0.1" }
+    { "pattern": "http://127.0.0.1" },
+    { "pattern": "INIT__*" }
   ],
   "aliveStatusCodes": [200]
 }
