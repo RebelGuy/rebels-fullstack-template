@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>__INIT_APP_NAME Server</title>
+  </head>
+  <body>
+    <p><strong>Version: </strong><%= htmlWebpackPlugin.options.version %></p>
+    <p><strong>Build Date: </strong><span id="server-build-date"></span></p>
+    <p><strong>Build Name: </strong><%= htmlWebpackPlugin.options.buildName %></p>
+    <p><strong>Server Startup Date: </strong><span id="server-startup-date"></span></p>
+    <a href="<%= htmlWebpackPlugin.options.studioUrl %>">Studio</a>
+  </body>
+  <script>
+    document.getElementById('server-build-date').innerText = new Date(<%= htmlWebpackPlugin.options.buildDate %>).toLocaleString()
+    document.getElementById('server-startup-date').innerText = new Date(__SERVER_STARTUP_TIME_PLACEHOLDER__).toLocaleString()
+  </script>
+</html>

@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "baseUrl": ".",
+    "paths": {
+      "@INIT__PATH_ALIAS/studio/*": ["./src/*"],
+      "@INIT__PATH_ALIAS/shared/*": ["../shared/*"],
+      "@INIT__PATH_ALIAS/api-models/*": ["../api-models/*"]
+    }
+  }
+}

@@ -1,0 +1,125 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-1.1.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id Int @id @default(autoincrement())
+
+  username       String   @db.VarChar(32) // unique
+  registeredAt   DateTime @default(now())
+  hashedPassword String   @db.VarChar(64)
+
+  loginTokens       LoginToken[]
+  userRanks         UserRank[]   @relation("user_rank_userId")
+  assignedUserRanks UserRank[]   @relation("user_rank_assignedByUserId")
+  revokedUserRanks  UserRank[]   @relation("user_rank_revokedByUserId")
+
+  @@unique([username], map: "user_username_key")
+  @@map("user")
+}
+
+model LoginToken {
+  id Int @id @default(autoincrement())
+
+  token String @db.VarChar(8) // unique
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], map: "login_token_userId_fkey")
+
+  @@unique([token], map: "login_token_token_key")
+  @@index([userId], map: "login_token_userId_fkey")
+  @@map("login_token")
+}
+
+model Rank {
+  id Int @id @default(autoincrement())
+
+  name        RankName
+  description String?  @db.VarChar(1024)
+
+  userRanks UserRank[]
+
+  @@unique([name], map: "rank_name_key")
+  @@map("rank")
+}
+
+enum RankName {
+  admin
+}
+
+// this table has a BEFORE INSERT trigger `TRG_CHECK_EXISTING_ACTIVE_RANK`
+model UserRank {
+  id Int @id @default(autoincrement())
+
+  issuedAt       DateTime
+  /// `null` if rank never expires
+  expirationTime DateTime?
+  /// optional assignment message
+  message        String?   @db.VarChar(1024)
+
+  /// only set if the rank has been revoked. acts as a "deactivated" flag
+  revokedTime   DateTime?
+  /// optional revocation message
+  revokeMessage String?   @db.VarChar(1024)
+
+  rankId Int
+  rank   Rank @relation(fields: [rankId], references: [id], map: "user_rank_rankId_fkey")
+
+  userId Int
+  user   User @relation("user_rank_userId", fields: [userId], references: [id], map: "user_rank_userId_fkey")
+
+  /// if null, was assigned by the system
+  assignedByUserId Int?
+  assignedByUser   User? @relation("user_rank_assignedByUserId", fields: [assignedByUserId], references: [id], map: "user_rank_assignedByUserId_fkey")
+
+  /// if null, was revoked by the system. only relevant when `revokedTime` is non-null, or the rank has expired
+  revokedByUserId Int?
+  revokedByUser   User? @relation("user_rank_revokedByUserId", fields: [revokedByUserId], references: [id], map: "user_rank_revokedByUserId_fkey")
+
+  @@index([rankId], map: "user_rank_rankId_fkey")
+  @@index([userId], map: "user_rank_userId_fkey")
+  @@index([expirationTime], map: "user_rank_expirationTime_key")
+  @@index([revokedTime], map: "user_rank_revokedTime_key")
+  @@map("user_rank")
+}
+
+model Task {
+  id Int @id @default(autoincrement())
+
+  taskType   String @db.VarChar(63) // unique
+  intervalMs Int
+
+  taskLogs TaskLog[]
+
+  @@unique([taskType], map: "task_taskType_key")
+  @@map("task")
+}
+
+model TaskLog {
+  id Int @id @default(autoincrement())
+
+  startTime DateTime
+  endTime   DateTime?
+
+  // if you change the lengths here, it must also be updated in the TaskStore class
+  /// The log contains debug/info logs and may be present while the task is still running, or finished, regardless of outcome.
+  log          String? @db.VarChar(4096)
+  /// If `endTime` is not null, the absence of an `errorMessage` indicates that the task finished successfully.
+  errorMessage String? @db.VarChar(4096)
+
+  taskId Int
+  task   Task @relation(fields: [taskId], references: [id], map: "task_log_taskId_fkey")
+
+  @@index([taskId], map: "task_log_taskId_fkey")
+  @@index([startTime], map: "task_log_startTime_key")
+  @@map("task_log")
+}

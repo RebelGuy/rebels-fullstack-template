@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "./projects/*"
+    ]
+  },
+  "engines": {
+    "node": ">=18.7.0"
+  },
+  "scripts": {
+    "init-project": "dotenv -e init.env node ./scripts/init.js",
+    "lint-server": "eslint ./projects/server/**/*.ts",
+    "lint-server-error": "eslint ./projects/server/**/*.ts --quiet",
+    "check-links": "find . -name \\*.md -not -path \"*/node_modules/**\" -print0 | xargs -0 -n1 yarn markdown-link-check --config markdown-link-check.config.json"
+  },
+  "_moduleAliases": {
+    "@INIT__PATH_ALIAS/server": "./dist/server",
+    "@INIT__PATH_ALIAS/shared": "./dist/shared",
+    "@INIT__PATH_ALIAS/api-models": "./dist/api-models"
+  },
+  "devDependencies": {
+    "@types/eslint": "^8.4.1",
+    "@typescript-eslint/eslint-plugin": "^5.10.2",
+    "@typescript-eslint/parser": "^5.10.2",
+    "markdown-link-check": "^3.11.2",
+    "mysql2": "^3.11.3"
+  }
+}

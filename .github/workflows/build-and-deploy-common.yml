@@ -1,0 +1,283 @@
+name: Build and Deploy Server/Studio
+
+on:
+  workflow_call:
+    inputs:
+      NODE_ENV:
+        # `debug` or `release`
+        type: string
+        required: true
+      STUDIO_URL:
+        type: string
+        required: true
+      SERVER_URL:
+        type: string
+        required: true
+      deploy:
+        type: boolean
+        required: true
+      tests:
+        type: boolean
+        required: true
+      migrations:
+        type: boolean
+        required: true
+      server:
+        type: boolean
+        required: true
+      studio:
+        type: boolean
+        required: true
+    secrets:
+      publishProfile:
+        # must be set if `deploy` is `true`
+        required: false
+        description: 'App Service secret'
+      STATIC_WEB_APPS_TOKEN:
+        # must be set if `deploy` is `true`
+        required: false
+      DATABASE_USERNAME:
+        required: true
+      DATABASE_PASSWORD:
+        required: true
+      DATABASE_HOST:
+        required: true
+      DATABASE_PORT:
+        required: true
+
+jobs:
+  build-server:
+    if: inputs.server
+    name: Build Server
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          # fetch all commits, not just the latest one, so that webpack can correctly set the version based on the commit count
+          fetch-depth: 0
+
+      # required for webpack and deployment
+      - name: Create .env file
+        run: |
+          touch ./projects/server/${{ inputs.NODE_ENV }}.env
+          echo NODE_ENV=${{ inputs.NODE_ENV }} >> ./projects/server/${{ inputs.NODE_ENV }}.env
+          echo "NAME=\"${{ github.sha }} - ${{ github.event_name }} - ${{ github.head_ref || github.ref_name }}\"" >> ./projects/server/${{ inputs.NODE_ENV }}.env
+          cat ./projects/server/${{ inputs.NODE_ENV }}.env
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'yarn'
+
+      - name: Install node modules
+        run: yarn install
+
+      - name: Build typescript project
+        run: yarn workspace server build:${{ inputs.NODE_ENV }} SKIP_TESTS=${{ !inputs.tests }}
+
+      - name: Upload artifact for deployment job
+        if: inputs.deploy
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-server-files
+          path: ./dist/**
+  
+  test-server:
+    if: inputs.tests && inputs.server
+    name: Test Server
+    runs-on: ubuntu-latest
+
+    steps:
+      # note: we don't use the built artifact because `ts-jest` builds TS files on the fly
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Create test.env file
+        # we are using separate test tables for the develop/master tests so they can run in parallel if needed
+        run: |
+          touch ./projects/server/test.env
+          echo "DATABASE_URL=\"mysql://${{ secrets.DATABASE_USERNAME }}:${{ secrets.DATABASE_PASSWORD }}@${{ secrets.DATABASE_HOST }}:${{ secrets.DATABASE_PORT }}/${{ inputs.NODE_ENV == 'debug' && 'INIT__DB_TEST_NAME_SANDBOX' || 'INIT__DB_TEST_NAME_PRODUCTION' }}?pool_timeout=30&connect_timeout=30\"" >> ./projects/server/test.env
+          cat ./projects/server/test.env
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'yarn'
+
+      - name: Install node modules
+        run: yarn install
+
+      - name: Migrate test database
+        if: inputs.migrations && inputs.deploy
+        run: yarn workspace server test:db
+          
+      - name: Generate Prisma client
+        run: yarn workspace server generate
+
+      - name: Run tests
+        timeout-minutes: 10
+        run: |
+          yarn workspace server test
+          yarn workspace shared test
+
+  # note: this does not block any later steps if it fails since we wouldn't expect broken links to lead to broken code
+  # a known limitation is that anchor tags referenced in other files are not checked, e.g. [text](../other-file.md#not-checked)
+  check-markdown-links:
+    if: inputs.tests
+    name: Check markdown links
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'yarn'
+
+      - name: Install node modules
+        run: yarn install
+      
+      - name: Check links
+        run: yarn check-links
+
+  build-studio:
+    if: inputs.studio
+    name: Build Studio
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          # fetch all commits, not just the latest one, so that webpack can correctly set the version based on the commit count
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'yarn'
+
+      - name: Install node modules
+        run: yarn install
+
+      - name: Create .env file
+        run: |
+          touch ./projects/studio/.env
+          echo REACT_APP_SERVER_URL=${{ inputs.SERVER_URL }} >> ./projects/studio/.env
+          echo DISABLE_ESLINT_PLUGIN=true >> ./projects/studio/.env
+          echo REACT_APP_STUDIO_VERSION="$(node ./scripts/getVersion | tr -d '\n')" >> ./projects/studio/.env
+          echo REACT_APP_ENV=${{ inputs.NODE_ENV }} >> ./projects/studio/.env
+          cat ./projects/studio/.env
+      
+      - name: Build typescript project
+        run: yarn workspace studio build
+
+      - name: Upload artifact for deployment job
+        if: inputs.deploy
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-studio-files
+          path: ./projects/studio/build/**
+
+  # this must be done in a different run so we don't upload the generated files here during deployment
+  migrate-database:
+    # from https://github.com/actions/runner/issues/491#issuecomment-850884422
+    if: always() && inputs.deploy && inputs.migrations && (needs.build-server.result == 'success' || needs.build-server.result == 'skipped') && (needs.test-server.result == 'success' || needs.test-server.result == 'skipped') && (needs.build-studio.result == 'success' || needs.build-studio.result == 'skipped')
+    name: Migrate database
+    runs-on: ubuntu-latest
+    needs: [build-server, test-server, build-studio]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'yarn'
+
+      - name: Install node modules
+        run: yarn install
+
+      - name: Create .env file
+        run: |
+          touch .env
+          echo "DATABASE_URL=\"mysql://${{ secrets.DATABASE_USERNAME }}:${{ secrets.DATABASE_PASSWORD }}@${{ secrets.DATABASE_HOST }}:${{ secrets.DATABASE_PORT }}/${{ inputs.NODE_ENV == 'debug' && 'INIT__DB_NAME_SANDBOX' || 'INIT__DB_NAME_PRODUCTION' }}?connection_limit=5&pool_timeout=30&connect_timeout=30\"" >> .env
+          cat .env
+
+      - name: Migrate database
+        run: dotenv yarn prisma migrate deploy
+  deploy-server:
+    if: always() && inputs.deploy && inputs.server && needs.build-server.result == 'success' && (needs.migrate-database.result == 'success' || needs.migrate-database.result == 'skipped') && (needs.test-server.result == 'success' || needs.test-server.result == 'skipped')
+    name: Deploy Server
+    runs-on: ubuntu-latest
+    needs: [build-server, migrate-database, test-server]
+
+    environment:
+      name: ${{ inputs.NODE_ENV == 'debug' && 'Sandbox' || 'Production' }}
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+    outputs:
+      server-url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+
+    steps:
+      - name: Download built server files
+        uses: actions/download-artifact@v4
+        with:
+          name: built-server-files
+
+      - name: Deploy to Azure
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ inputs.NODE_ENV == 'debug' && 'INIT__AZURE_SANDBOX_APP_NAME' || 'INIT__AZURE_PRODUCTION_APP_NAME' }}
+          slot-name: 'Production'
+          publish-profile: ${{ secrets.publishProfile }}
+          package: .
+
+  deploy-studio:
+    if: always() && inputs.deploy && inputs.studio && needs.build-studio.result == 'success' && (needs.deploy-server.result == 'success' || needs.deploy-server.result == 'skipped') && (needs.test-server.result == 'success' || needs.test-server.result == 'skipped')
+    name: Deploy Studio
+    runs-on: ubuntu-latest
+    needs: [build-studio, deploy-server, test-server]
+    environment:
+      name: ${{ inputs.NODE_ENV == 'debug' && 'Sandbox' || 'Production' }}
+      url: ${{ inputs.STUDIO_URL }}
+
+    steps:
+      - name: Download built studio files
+        uses: actions/download-artifact@v4
+        with:
+          name: built-studio-files
+
+      - name: Deploy to Azure
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          # see https://docs.microsoft.com/en-us/azure/static-web-apps/build-configuration?tabs=github-actions
+          azure_static_web_apps_api_token: ${{ secrets.STATIC_WEB_APPS_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }} # Used for Github integrations (e.g. PR comments)
+          action: upload
+          skip_app_build: true
+          app_location: .
+
+  cleanup:
+    name: Clean up
+    if: always()
+    runs-on: ubuntu-latest
+    needs: [deploy-server, deploy-studio]
+    steps:
+      - name: Remove Server artifacts
+        uses: geekyeggo/delete-artifact@v1
+        with:
+          name: built-server-files
+          failOnError: false

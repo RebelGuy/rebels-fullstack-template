@@ -1,0 +1,46 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Attach",
+      "type": "node",
+      "protocol": "inspector",
+      "request": "attach",
+      "stopOnEntry": false,
+      "port": 9229,
+      "localRoot": "${workspaceRoot}/dist/",
+      "remoteRoot": "${workspaceRoot}/dist/",
+      "sourceMaps": true,
+    },
+    {
+      "name": "start:local",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/projects/server",
+      "runtimeArgs": ["start:local"],
+      "runtimeExecutable": "yarn",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "type": "pwa-node",
+      "outFiles": [
+        // apparently vscode is dumb and can't find the files... sometimes
+        "${workspaceFolder}/dist/**/*.js",
+        "!**/node_modules/**"
+      ]
+    },
+    {
+      "name": "Debug Tests",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/projects/server",
+      "runtimeArgs": ["test", ""], // modify this to run only certain files, e.g. ["test", "ExampleService"]
+      "runtimeExecutable": "yarn",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "type": "pwa-node",
+    }
+  ]
+}

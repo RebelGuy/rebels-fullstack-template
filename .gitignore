@@ -1,0 +1,9 @@
+.env
+node_modules/
+dist/
+data/
+debug.env
+release.env
+test.env
+local.env
+emojiMap.json

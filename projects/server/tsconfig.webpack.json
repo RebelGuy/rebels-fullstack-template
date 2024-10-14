@@ -1,0 +1,25 @@
+// do not make changes to this file without also updating ./tsconfig.json
+// ideally this would simply extend ./tsconfig.json and override only the exclude property, but of course it doesn't work like that 
+{
+  "extends": "../../tsconfig.base.json",
+  "references": [
+    { "path": "../shared" },
+    { "path": "../api-models" },
+  ],
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "../../dist/server",
+    "module": "commonjs",
+    "target": "es2020",
+    "lib": ["ES6", "DOM"], // DOM is required to make `fetch` work
+    "noImplicitOverride": true
+  },
+  "include": ["./**/*"],
+  "exclude": [
+    "./**/*.test.ts",
+    "./**/*.spec.ts",
+
+    "./node_modules",
+    "./prisma",
+  ]
+}
