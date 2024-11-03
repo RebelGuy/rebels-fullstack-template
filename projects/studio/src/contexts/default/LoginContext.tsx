@@ -18,7 +18,6 @@ type Props = {
 export function LoginProvider (props: Props) {
   const [loginToken, setLoginToken] = React.useState<string | null>(null)
   const [username, setUsername] = React.useState<string | null>(null)
-  const [displayName, setDisplayName] = React.useState<string | null>(null)
   const [hasLoadedAuth, setHasLoadedAuth] = React.useState(false)
   const [authError, setAuthError] = React.useState<string | null>(null)
 
@@ -49,7 +48,6 @@ export function LoginProvider (props: Props) {
 
     setLoginToken(null)
     setUsername(null)
-    setDisplayName(null)
   }
 
   const onLogin = React.useCallback(async () => {
